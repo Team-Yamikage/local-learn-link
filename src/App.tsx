@@ -8,6 +8,11 @@ import Navigation from "@/components/Navigation";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import Questions from "./pages/Questions";
+import AskQuestion from "./pages/AskQuestion";
+import QuestionDetail from "./pages/QuestionDetail";
+import StudyGroups from "./pages/StudyGroups";
+import Resources from "./pages/Resources";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +30,11 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/questions" element={<Questions />} />
+              <Route path="/ask" element={<AskQuestion />} />
+              <Route path="/questions/:id" element={<QuestionDetail />} />
+              <Route path="/groups" element={<StudyGroups />} />
+              <Route path="/resources" element={<Resources />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -47,10 +47,10 @@ const Navigation = () => {
   };
 
   const navItems = [
-    { href: '/', label: 'Home', icon: BookOpen },
+    { href: '/dashboard', label: 'Dashboard', icon: BookOpen },
     { href: '/questions', label: 'Questions', icon: MessageCircle },
     { href: '/groups', label: 'Study Groups', icon: Users },
-    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { href: '/resources', label: 'Resources', icon: Trophy },
   ];
 
   const getInitials = (name: string) => {
