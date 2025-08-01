@@ -12,7 +12,10 @@ import Questions from "./pages/Questions";
 import AskQuestion from "./pages/AskQuestion";
 import QuestionDetail from "./pages/QuestionDetail";
 import StudyGroups from "./pages/StudyGroups";
+import GroupDetail from "./pages/GroupDetail";
+import CreateGroup from "./pages/CreateGroup";
 import Resources from "./pages/Resources";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,7 +37,10 @@ const App = () => (
               <Route path="/ask" element={<AskQuestion />} />
               <Route path="/questions/:id" element={<QuestionDetail />} />
               <Route path="/groups" element={<StudyGroups />} />
+              <Route path="/groups/create" element={<CreateGroup />} />
+              <Route path="/groups/:id" element={<GroupDetail />} />
               <Route path="/resources" element={<Resources />} />
+              <Route path="/profile" element={<Profile />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

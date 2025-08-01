@@ -1,12 +1,25 @@
-import { useState, useEffect } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { FileText, Download, Upload, Search, Star } from "lucide-react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Search, Download, Upload, FileText, Image as ImageIcon, File, Star } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+import FileUpload from '@/components/FileUpload';
+
+interface Subject {
+  id: string;
+  name: string;
+  code: string;
+}
 
 interface Resource {
   id: string;
@@ -29,15 +42,42 @@ interface Resource {
   } | null;
 }
 
-export default function Resources() {
+const Resources = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [resources, setResources] = useState<Resource[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('all');
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadForm, setUploadForm] = useState({
+    title: '',
+    description: '',
+    subject_id: '',
+    file: null as File | null
+  });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetchResources();
+    fetchSubjects();
   }, []);
+
+  const fetchSubjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setSubjects(data || []);
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+    }
+  };
 
   const fetchResources = async () => {
     try {
@@ -45,8 +85,8 @@ export default function Resources() {
         .from('resources')
         .select(`
           *,
-          profiles:user_id (full_name),
-          subjects:subject_id (name, code)
+          profiles!user_id (full_name),
+          subjects!subject_id (name, code)
         `)
         .order('created_at', { ascending: false });
 
@@ -59,9 +99,59 @@ export default function Resources() {
     }
   };
 
+  const handleFileUpload = async (file: File): Promise<string> => {
+    // Simulate file upload - in real app, upload to Supabase Storage
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(`https://example.com/files/${file.name}`);
+      }, 1000);
+    });
+  };
+
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !uploadForm.file) return;
+
+    setUploading(true);
+    try {
+      const fileUrl = await handleFileUpload(uploadForm.file);
+      
+      const { error } = await supabase
+        .from('resources')
+        .insert([{
+          title: uploadForm.title,
+          description: uploadForm.description,
+          subject_id: uploadForm.subject_id || null,
+          file_url: fileUrl,
+          file_type: uploadForm.file.type,
+          file_size: uploadForm.file.size,
+          user_id: user.id
+        }]);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Resource uploaded successfully!",
+      });
+
+      setShowUploadDialog(false);
+      setUploadForm({ title: '', description: '', subject_id: '', file: null });
+      fetchResources();
+    } catch (error) {
+      console.error('Error uploading resource:', error);
+      toast({
+        title: "Error",
+        description: "Failed to upload resource",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const downloadResource = async (resourceId: string, fileUrl: string) => {
     try {
-      // Increment download count
       const resource = resources.find(r => r.id === resourceId);
       if (resource) {
         await supabase
@@ -69,8 +159,6 @@ export default function Resources() {
           .update({ download_count: resource.download_count + 1 })
           .eq('id', resourceId);
       }
-
-      // Download file
       window.open(fileUrl, '_blank');
       fetchResources();
     } catch (error) {
@@ -120,12 +208,85 @@ export default function Resources() {
           <h1 className="text-3xl font-bold text-foreground">Resources</h1>
           <p className="text-muted-foreground">Share and discover study materials</p>
         </div>
-        <Link to="/upload-resource">
-          <Button className="gap-2">
-            <Upload className="h-4 w-4" />
-            Upload Resource
-          </Button>
-        </Link>
+        <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Resource
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Upload Resource</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUploadSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={uploadForm.title}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Resource title"
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={uploadForm.description}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Describe the resource..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject (Optional)</Label>
+                <Select
+                  value={uploadForm.subject_id}
+                  onValueChange={(value) => setUploadForm(prev => ({ ...prev, subject_id: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select subject" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject.id} value={subject.id}>
+                        {subject.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>File</Label>
+                <FileUpload
+                  onFileUpload={handleFileUpload}
+                  acceptedTypes={['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt', '.jpg', '.jpeg', '.png']}
+                  maxSize={10}
+                  onFilesSelected={(files) => setUploadForm(prev => ({ ...prev, file: files[0] }))}
+                />
+                {uploadForm.file && (
+                  <p className="text-sm text-muted-foreground">
+                    Selected: {uploadForm.file.name}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button type="submit" disabled={!uploadForm.file || uploading} className="flex-1">
+                  {uploading ? 'Uploading...' : 'Upload'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowUploadDialog(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="relative mb-6">
@@ -203,12 +364,14 @@ export default function Resources() {
                 ? "Try adjusting your search terms." 
                 : "Be the first to share a study resource!"}
             </p>
-            <Link to="/upload-resource">
-              <Button>Upload Resource</Button>
-            </Link>
+            <Button onClick={() => setShowUploadDialog(true)}>
+              Upload Resource
+            </Button>
           </CardContent>
         </Card>
       )}
     </div>
   );
-}
+};
+
+export default Resources;
