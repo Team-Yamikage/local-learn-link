@@ -26,13 +26,14 @@ interface Question {
     code: string;
   } | null;
   answers: { count: number }[];
+  answer_count?: number;
 }
 
 export default function Questions() {
   const { user } = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'resolved' | 'unresolved'>('all');
+  const [filter, setFilter] = useState<'all' | 'resolved' | 'unanswered'>('all');
 
   useEffect(() => {
     fetchQuestions();
@@ -40,25 +41,49 @@ export default function Questions() {
 
   const fetchQuestions = async () => {
     try {
-      let query = supabase
+      // Use the regular questions table and compute answer counts manually
+      const { data, error } = await supabase
         .from('questions')
         .select(`
           *,
           profiles:user_id (full_name),
-          subjects:subject_id (name, code),
-          answers (count)
+          subjects:subject_id (name, code)
         `)
         .order('created_at', { ascending: false });
 
-      if (filter === 'resolved') {
-        query = query.eq('is_resolved', true);
-      } else if (filter === 'unresolved') {
-        query = query.eq('is_resolved', false);
+      if (error) throw error;
+
+      // Get answer counts for all questions
+      const { data: answerCounts, error: countError } = await supabase
+        .from('answers')
+        .select('question_id')
+        .in('question_id', (data || []).map(q => q.id));
+
+      if (countError) {
+        console.error('Error fetching answer counts:', countError);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setQuestions((data as any) || []);
+      // Count answers per question
+      const answerCountMap = (answerCounts || []).reduce((acc, answer) => {
+        acc[answer.question_id] = (acc[answer.question_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Add answer counts to questions
+      const questionsWithCounts = (data || []).map(question => ({
+        ...question,
+        answer_count: answerCountMap[question.id] || 0
+      }));
+
+      // Apply filter
+      let filteredQuestions = questionsWithCounts;
+      if (filter === 'resolved') {
+        filteredQuestions = questionsWithCounts.filter(q => q.is_resolved);
+      } else if (filter === 'unanswered') {
+        filteredQuestions = questionsWithCounts.filter(q => q.answer_count === 0);
+      }
+
+      setQuestions(filteredQuestions as any);
     } catch (error) {
       console.error('Error fetching questions:', error);
     } finally {
@@ -115,8 +140,8 @@ export default function Questions() {
           All Questions
         </Button>
         <Button
-          variant={filter === 'unresolved' ? 'default' : 'outline'}
-          onClick={() => setFilter('unresolved')}
+          variant={filter === 'unanswered' ? 'default' : 'outline'}
+          onClick={() => setFilter('unanswered')}
         >
           Unanswered
         </Button>
@@ -158,7 +183,7 @@ export default function Questions() {
                 </div>
                 <div className="flex items-center gap-1">
                   <MessageSquare className="h-4 w-4" />
-                  {question.answers?.[0]?.count || 0}
+                  {question.answer_count || question.answers?.[0]?.count || 0}
                 </div>
                 <div className="flex items-center gap-1">
                   <Eye className="h-4 w-4" />

@@ -102,17 +102,45 @@ const Profile = () => {
       const { data, error } = await supabase
         .from('user_badges')
         .select(`
-          *,
-          badges(*)
+          id,
+          user_id,
+          badge_id,
+          earned_at
         `)
         .eq('user_id', user?.id)
         .order('earned_at', { ascending: false });
 
       if (error) throw error;
-      setUserBadges((data || []).map(userBadge => ({
-        ...userBadge,
-        badge: userBadge.badges
-      })));
+
+      if (data) {
+        // Fetch badge details separately to avoid relation issues
+        const badgeIds = data.map(ub => ub.badge_id);
+        const { data: badges, error: badgesError } = await supabase
+          .from('badges')
+          .select('*')
+          .in('id', badgeIds);
+
+        if (badgesError) {
+          console.error('Error fetching badges:', badgesError);
+          return;
+        }
+
+        const userBadgesWithDetails = data.map(userBadge => ({
+          ...userBadge,
+          badge: badges?.find(b => b.id === userBadge.badge_id) || {
+            id: '',
+            name: 'Unknown Badge',
+            description: '',
+            icon: '🏆',
+            color: '#gray',
+            requirement_type: '',
+            requirement_value: 0,
+            created_at: ''
+          }
+        }));
+
+        setUserBadges(userBadgesWithDetails);
+      }
     } catch (error) {
       console.error('Error fetching user badges:', error);
     }

@@ -71,22 +71,43 @@ const GroupDetail = () => {
 
   const fetchGroupDetails = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: groupData, error: groupError } = await supabase
         .from('study_groups')
         .select(`
-          *,
-          subjects!subject_id(name, code),
-          profiles!creator_id(full_name, avatar_url)
+          id,
+          name,
+          description,
+          privacy,
+          max_members,
+          creator_id,
+          subject_id,
+          created_at,
+          updated_at
         `)
         .eq('id', id)
         .single();
 
-      if (error) throw error;
-      if (data) {
+      if (groupError) throw groupError;
+
+      if (groupData) {
+        // Fetch subject and creator profile separately
+        const [subjectRes, profileRes] = await Promise.all([
+          supabase
+            .from('subjects')
+            .select('name, code')
+            .eq('id', groupData.subject_id)
+            .single(),
+          supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('user_id', groupData.creator_id)
+            .single()
+        ]);
+
         setGroup({
-          ...data,
-          subject: data.subjects,
-          creator_profile: data.profiles
+          ...groupData,
+          subject: subjectRes.data || { name: 'Unknown Subject', code: 'N/A' },
+          creator_profile: profileRes.data || { full_name: 'Unknown User', avatar_url: null }
         });
       }
     } catch (error) {
@@ -104,17 +125,40 @@ const GroupDetail = () => {
       const { data, error } = await supabase
         .from('group_members')
         .select(`
-          *,
-          profiles!user_id(full_name, avatar_url)
+          id,
+          user_id,
+          role,
+          joined_at,
+          group_id
         `)
         .eq('group_id', id)
         .order('joined_at', { ascending: true });
 
       if (error) throw error;
-      setMembers((data || []).map(member => ({
-        ...member,
-        profile: member.profiles
-      })));
+
+      if (data) {
+        // Fetch profiles separately to avoid relation issues
+        const userIds = data.map(member => member.user_id);
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, avatar_url')
+          .in('user_id', userIds);
+
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError);
+          return;
+        }
+
+        const membersWithProfiles = data.map(member => ({
+          ...member,
+          profile: profiles?.find(p => p.user_id === member.user_id) || { 
+            full_name: 'Unknown User', 
+            avatar_url: null 
+          }
+        }));
+
+        setMembers(membersWithProfiles);
+      }
     } catch (error) {
       console.error('Error fetching members:', error);
     }
@@ -125,18 +169,44 @@ const GroupDetail = () => {
       const { data, error } = await supabase
         .from('messages')
         .select(`
-          *,
-          profiles!user_id(full_name, avatar_url)
+          id,
+          content,
+          message_type,
+          created_at,
+          user_id,
+          group_id,
+          file_url,
+          file_name
         `)
         .eq('group_id', id)
         .order('created_at', { ascending: true })
         .limit(50);
 
       if (error) throw error;
-      setMessages((data || []).map(message => ({
-        ...message,
-        profile: message.profiles
-      })));
+
+      if (data) {
+        // Fetch profiles separately to avoid relation issues
+        const userIds = [...new Set(data.map(message => message.user_id))];
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, avatar_url')
+          .in('user_id', userIds);
+
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError);
+          return;
+        }
+
+        const messagesWithProfiles = data.map(message => ({
+          ...message,
+          profile: profiles?.find(p => p.user_id === message.user_id) || {
+            full_name: 'Unknown User',
+            avatar_url: null
+          }
+        }));
+
+        setMessages(messagesWithProfiles);
+      }
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
@@ -156,22 +226,22 @@ const GroupDetail = () => {
           filter: `group_id=eq.${id}`
         },
         async (payload) => {
-          // Fetch the complete message with profile data
-          const { data, error } = await supabase
-            .from('messages')
-            .select(`
-              *,
-              profiles!user_id(full_name, avatar_url)
-            `)
-            .eq('id', payload.new.id)
+          // Fetch the profile for the new message
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('user_id', payload.new.user_id)
             .single();
 
-          if (!error && data) {
-            setMessages(prev => [...prev, {
-              ...data,
-              profile: data.profiles
-            }]);
+          if (profileError) {
+            console.error('Error fetching profile for new message:', profileError);
+            return;
           }
+
+          setMessages(prev => [...prev, {
+            ...payload.new as any,
+            profile: profile || { full_name: 'Unknown User', avatar_url: null }
+          } as Message]);
         }
       )
       .subscribe();
